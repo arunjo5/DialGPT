@@ -33,5 +33,4 @@ Set in `.env`:
 
 - `OPENAI_API_KEY` (required)
 - `PORT` (default 5050)
-- `TEMPERATURE` (default 0.8)
 - `PDF_PATH` (optional grounding doc, ignored if the file is missing)

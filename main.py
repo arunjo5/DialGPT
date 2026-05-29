@@ -1,13 +1,11 @@
 import os
 import json
-import base64
-from typing import Optional
 import asyncio
 import websockets
 from fastapi import FastAPI, WebSocket, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.websockets import WebSocketDisconnect
-from twilio.twiml.voice_response import VoiceResponse, Connect, Say, Stream
+from twilio.twiml.voice_response import VoiceResponse, Connect
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -44,7 +42,6 @@ PDF_TEXT = load_pdf_text(PDF_PATH)
 # Configuration
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 PORT = int(os.getenv('PORT', 5050))
-TEMPERATURE = float(os.getenv('TEMPERATURE', 0.8))
 SYSTEM_MESSAGE = (
     "You are a helpful and adaptable AI assistant. Default language: English (en-US). "
     "Detect the language the user speaks in each turn and reply in that same language. "
@@ -98,7 +95,7 @@ async def handle_media_stream(websocket: WebSocket):
     await websocket.accept()
 
     async with websockets.connect(
-        f"wss://api.openai.com/v1/realtime?model=gpt-realtime&temperature={TEMPERATURE}",
+        "wss://api.openai.com/v1/realtime?model=gpt-realtime",
         additional_headers={
             "Authorization": f"Bearer {OPENAI_API_KEY}"
         }
@@ -115,7 +112,7 @@ async def handle_media_stream(websocket: WebSocket):
         
         async def receive_from_twilio():
             """Receive audio data from Twilio and send it to the OpenAI Realtime API."""
-            nonlocal stream_sid, latest_media_timestamp
+            nonlocal stream_sid, latest_media_timestamp, response_start_timestamp_twilio, last_assistant_item
             try:
                 async for message in websocket.iter_text():
                     data = json.loads(message)
@@ -142,7 +139,7 @@ async def handle_media_stream(websocket: WebSocket):
 
         async def send_to_twilio():
             """Receive events from the OpenAI Realtime API, send audio back to Twilio."""
-            nonlocal stream_sid, last_assistant_item, response_start_timestamp_twilio
+            nonlocal stream_sid, last_assistant_item, response_start_timestamp_twilio, caller_speech_start
             try:
                 async for openai_message in openai_ws:
                     response = json.loads(openai_message)
@@ -150,7 +147,7 @@ async def handle_media_stream(websocket: WebSocket):
                         print(f"Received event: {response['type']}", response)
 
                     if response.get('type') == 'response.output_audio.delta' and 'delta' in response:
-                        audio_payload = base64.b64encode(base64.b64decode(response['delta'])).decode('utf-8')
+                        audio_payload = response['delta']
                         audio_delta = {
                             "event": "media",
                             "streamSid": stream_sid,
