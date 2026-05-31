@@ -6,6 +6,7 @@ __pycache__/
 .eggs/
 build/
 dist/
+.pytest_cache/
 
 # Virtual environments
 .venv/
@@ -18,7 +19,7 @@ ENV/
 .env.*
 !.env.example
 
-# Local data — PDFs are environment-specific; commit intentionally if needed
+# Local data: PDFs are environment-specific; commit intentionally if needed
 *.pdf
 
 # Editor / OS
