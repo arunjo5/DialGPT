@@ -42,6 +42,9 @@ class FakeOpenAI:
     async def start_assistant_turn(self):
         self.calls.append(("start_turn",))
 
+    async def submit_tool_result(self, call_id, output):
+        self.calls.append(("tool_result", call_id, output))
+
 
 async def _scripted(events):
     for event in events:
@@ -136,3 +139,33 @@ async def test_pump_cancelled_does_not_emit_terminal():
     while not queue.empty():
         drained.append(queue.get_nowait())
     assert all(isinstance(i, E.CallerAudioReceived) for i in drained)  # no terminal
+
+
+class FakeRetriever:
+    def __init__(self, chunks):
+        self._chunks = chunks
+
+    async def search(self, query, k=None):
+        return self._chunks
+
+
+async def test_tool_call_runs_retrieval_and_submits_result():
+    openai = FakeOpenAI()
+    retriever = FakeRetriever(["passage about cats", "more cat facts"])
+    await orch._handle_tool_call(
+        E.AssistantToolCall(call_id="c1", name="search_document", arguments='{"query": "cats"}'),
+        openai,
+        retriever,
+    )
+    submitted = [c for c in openai.calls if c[0] == "tool_result"]
+    assert submitted and submitted[0][1] == "c1" and "passage about cats" in submitted[0][2]
+
+
+async def test_tool_call_without_retriever_returns_placeholder():
+    openai = FakeOpenAI()
+    await orch._handle_tool_call(
+        E.AssistantToolCall(call_id="c2", name="search_document", arguments='{"query": "x"}'),
+        openai,
+        None,
+    )
+    assert ("tool_result", "c2", "No document is available.") in openai.calls

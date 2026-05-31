@@ -19,6 +19,8 @@ PORT: int = int(os.getenv("PORT", "5050"))
 MODEL: str = os.getenv("OPENAI_MODEL", "gpt-realtime")
 VOICE: str = os.getenv("VOICE", "alloy")
 PDF_PATH: str = os.getenv("PDF_PATH", "document.pdf")
+EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+RAG_TOP_K: int = int(os.getenv("RAG_TOP_K", "4"))
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -49,12 +51,13 @@ GREETING_INSTRUCTION: str = (
 PDF_TEXT: str = load_pdf_text(PDF_PATH)
 
 
-def build_instructions() -> str:
+def build_instructions(has_document: bool = False) -> str:
     instructions = SYSTEM_MESSAGE
-    if PDF_TEXT:
+    if has_document:
         instructions = (
-            f"{instructions}\n\nUse the following document as the primary source "
-            f"when answering user questions:\n{PDF_TEXT}"
+            f"{instructions}\n\nThe caller has provided a document. Use the "
+            "search_document tool to look up relevant passages before answering "
+            "questions it might cover, and ground your answer in what it returns."
         )
     return instructions
 

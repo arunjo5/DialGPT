@@ -58,5 +58,12 @@ class SessionConfigured(Event):
 
 
 @dataclass(frozen=True)
+class AssistantToolCall(Event):
+    call_id: str
+    name: str
+    arguments: str
+
+
+@dataclass(frozen=True)
 class OpenAIClosed(Event):
     pass

@@ -8,6 +8,8 @@ accept that and bound the queue so a stalled consumer can't grow memory.
 from __future__ import annotations
 
 import asyncio
+import json
+import time
 from collections.abc import AsyncIterator
 
 from fastapi import WebSocket
@@ -17,11 +19,31 @@ from app.domain import commands as C
 from app.domain import events as E
 from app.domain.session import CallSession
 from app.domain.state import CallState
-from app.metrics import CALLS, CallLatency
+from app.metrics import CALLS, RETRIEVAL_LATENCY, CallLatency
+from app.rag.service import get_retriever
 from app.transport.openai_realtime import OpenAIRealtime
 from app.transport.twilio_stream import TwilioMediaStream
 
 _QUEUE_MAXSIZE = 512  # ~10s of 20ms frames
+
+SEARCH_DOCUMENT_TOOL = {
+    "type": "function",
+    "name": "search_document",
+    "description": (
+        "Search the caller's document for passages relevant to a question. "
+        "Call this whenever the caller asks something the document might answer."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "The search query, usually the caller's question.",
+            },
+        },
+        "required": ["query"],
+    },
+}
 
 
 async def run_call(twilio_ws: WebSocket) -> None:
@@ -29,12 +51,15 @@ async def run_call(twilio_ws: WebSocket) -> None:
     twilio = TwilioMediaStream(twilio_ws)
     monitor = CallLatency()
     CALLS.inc()
+    retriever = get_retriever()
+    has_document = bool(retriever and retriever.chunk_count)
     try:
         async with OpenAIRealtime(
             api_key=config.require_api_key(),
             model=config.MODEL,
             voice=config.VOICE,
-            instructions=config.build_instructions(),
+            instructions=config.build_instructions(has_document),
+            tools=[SEARCH_DOCUMENT_TOOL] if has_document else None,
         ) as openai:
             await openai.initialize_session()
 
@@ -56,8 +81,6 @@ async def run_call(twilio_ws: WebSocket) -> None:
 
 
 async def _pump(source: AsyncIterator[E.Event], queue: asyncio.Queue, terminal: E.Event) -> None:
-    # Emit the terminal when the source ends or errors so the consumer learns the
-    # stream is gone, but not on cancellation, where we're already tearing down.
     try:
         async for event in source:
             await queue.put(event)
@@ -77,6 +100,9 @@ async def _drive(
 ) -> None:
     while True:
         event = await queue.get()
+        if isinstance(event, E.AssistantToolCall):
+            await _handle_tool_call(event, openai, get_retriever())
+            continue
         commands = session.handle(event)
         if observer is not None:
             observer.observe(event, commands)
@@ -99,3 +125,22 @@ async def _dispatch(command: C.Command, twilio: TwilioMediaStream, openai: OpenA
         await openai.start_assistant_turn()
     elif isinstance(command, C.HangUp):
         pass
+
+
+async def _handle_tool_call(event: E.AssistantToolCall, openai: OpenAIRealtime, retriever) -> None:
+    query = _tool_query(event.arguments)
+    if retriever is None or not query:
+        await openai.submit_tool_result(event.call_id, "No document is available.")
+        return
+    start = time.monotonic()
+    chunks = await retriever.search(query)
+    RETRIEVAL_LATENCY.observe(time.monotonic() - start)
+    output = "\n\n---\n\n".join(chunks) if chunks else "No relevant passages found."
+    await openai.submit_tool_result(event.call_id, output)
+
+
+def _tool_query(arguments: str) -> str:
+    try:
+        return json.loads(arguments).get("query", "")
+    except (ValueError, AttributeError):
+        return ""

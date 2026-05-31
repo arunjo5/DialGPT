@@ -24,6 +24,11 @@ BARGE_IN_LATENCY = Histogram(
     "Caller starting a barge-in to the assistant being cut off.",
     buckets=(0.3, 0.5, 0.75, 1.0, 1.5, 2.0, 4.0),
 )
+RETRIEVAL_LATENCY = Histogram(
+    "voice_retrieval_latency_seconds",
+    "Document retrieval time for a search_document tool call.",
+    buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.0),
+)
 CALLS = Counter("voice_calls", "Calls handled.")
 TURNS = Counter("voice_turns", "Assistant response turns.")
 BARGE_INS = Counter("voice_barge_ins", "Barge-in interruptions.")

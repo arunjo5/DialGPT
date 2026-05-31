@@ -19,11 +19,20 @@ _LOG_EVENT_TYPES = {
 class OpenAIRealtime:
     """Owns the OpenAI realtime WebSocket. Use as an async context manager."""
 
-    def __init__(self, *, api_key: str, model: str, voice: str, instructions: str) -> None:
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        voice: str,
+        instructions: str,
+        tools: list | None = None,
+    ) -> None:
         self._api_key = api_key
         self._model = model
         self._voice = voice
         self._instructions = instructions
+        self._tools = tools
         self._ws = None
 
     async def __aenter__(self) -> "OpenAIRealtime":
@@ -38,25 +47,26 @@ class OpenAIRealtime:
             await self._ws.close()
 
     async def initialize_session(self) -> None:
-        await self._send({
-            "type": "session.update",
-            "session": {
-                "type": "realtime",
-                "model": self._model,
-                "output_modalities": ["audio"],
-                "audio": {
-                    "input": {
-                        "format": {"type": "audio/pcmu"},
-                        "turn_detection": {"type": "server_vad"},
-                    },
-                    "output": {
-                        "format": {"type": "audio/pcmu"},
-                        "voice": self._voice,
-                    },
+        session = {
+            "type": "realtime",
+            "model": self._model,
+            "output_modalities": ["audio"],
+            "audio": {
+                "input": {
+                    "format": {"type": "audio/pcmu"},
+                    "turn_detection": {"type": "server_vad"},
                 },
-                "instructions": self._instructions,
+                "output": {
+                    "format": {"type": "audio/pcmu"},
+                    "voice": self._voice,
+                },
             },
-        })
+            "instructions": self._instructions,
+        }
+        if self._tools:
+            session["tools"] = self._tools
+            session["tool_choice"] = "auto"
+        await self._send({"type": "session.update", "session": session})
 
     async def start_assistant_turn(self) -> None:
         await self._send({
@@ -82,6 +92,13 @@ class OpenAIRealtime:
             "audio_end_ms": audio_end_ms,
         })
 
+    async def submit_tool_result(self, call_id: str, output: str) -> None:
+        await self._send({
+            "type": "conversation.item.create",
+            "item": {"type": "function_call_output", "call_id": call_id, "output": output},
+        })
+        await self._send({"type": "response.create"})
+
     async def events(self) -> AsyncIterator[E.Event]:
         try:
             async for message in self._ws:
@@ -99,6 +116,12 @@ class OpenAIRealtime:
                     yield E.CallerSpeechStopped()
                 elif etype == "session.updated":
                     yield E.SessionConfigured()
+                elif etype == "response.function_call_arguments.done":
+                    yield E.AssistantToolCall(
+                        call_id=data.get("call_id", ""),
+                        name=data.get("name", ""),
+                        arguments=data.get("arguments", ""),
+                    )
         except websockets.ConnectionClosed:
             return
 

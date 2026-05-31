@@ -3,6 +3,7 @@ so `uvicorn main:app` is unchanged.
 """
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response, WebSocket
@@ -10,13 +11,24 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app import config
+from app.rag import Retriever
+from app.rag.embedder import OpenAIEmbedder
+from app.rag.service import set_retriever
 from app.transport.orchestrator import run_call
 from app.twiml import build_incoming_call_twiml
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    config.require_api_key()  # fail fast at startup, not at import
+    api_key = config.require_api_key()  # fail fast at startup, not at import
+    retriever = Retriever(
+        OpenAIEmbedder(api_key, config.EMBEDDING_MODEL),
+        top_k=config.RAG_TOP_K,
+    )
+    if config.PDF_TEXT:
+        count = await retriever.ingest(config.PDF_TEXT)
+        logging.getLogger("voice").info("ingested %d chunks from %s", count, config.PDF_PATH)
+    set_retriever(retriever)
     yield
 
 
