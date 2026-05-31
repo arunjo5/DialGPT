@@ -5,8 +5,9 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, WebSocket
+from fastapi import FastAPI, Request, Response, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app import config
 from app.transport.orchestrator import run_call
@@ -25,6 +26,11 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/", response_class=JSONResponse)
 async def index_page():
     return {"message": "Twilio Media Stream Server is running!"}
+
+
+@app.get("/metrics")
+async def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.api_route("/incoming-call", methods=["GET", "POST"])

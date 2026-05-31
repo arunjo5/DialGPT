@@ -21,3 +21,10 @@ def test_incoming_call_returns_twiml_that_opens_the_stream():
     assert resp.status_code == 200
     assert "<Connect>" in resp.text
     assert "wss://example.com/media-stream" in resp.text
+
+
+def test_metrics_endpoint_exposes_prometheus():
+    with TestClient(main.app) as client:
+        resp = client.get("/metrics")
+    assert resp.status_code == 200
+    assert "voice_calls_total" in resp.text

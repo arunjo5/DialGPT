@@ -54,6 +54,16 @@ pytest
 
 The domain tests exercise the state machine and the 300ms/200ms barge-in debounce with no network. The orchestrator tests cover the consumer loop and teardown using in-memory fake adapters.
 
+## Metrics
+
+Prometheus latency metrics are exposed at `/metrics`:
+
+- `voice_response_latency_seconds`: caller stops speaking to first assistant audio
+- `voice_barge_in_latency_seconds`: caller barge-in start to assistant cut off
+- `voice_calls_total`, `voice_turns_total`, `voice_barge_ins_total`
+
+Each call also logs a one-line latency summary when it ends.
+
 ## Config
 
 Set in `.env`:

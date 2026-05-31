@@ -17,6 +17,7 @@ from app.domain import commands as C
 from app.domain import events as E
 from app.domain.session import CallSession
 from app.domain.state import CallState
+from app.metrics import CALLS, CallLatency
 from app.transport.openai_realtime import OpenAIRealtime
 from app.transport.twilio_stream import TwilioMediaStream
 
@@ -26,6 +27,8 @@ _QUEUE_MAXSIZE = 512  # ~10s of 20ms frames
 async def run_call(twilio_ws: WebSocket) -> None:
     await twilio_ws.accept()
     twilio = TwilioMediaStream(twilio_ws)
+    monitor = CallLatency()
+    CALLS.inc()
     try:
         async with OpenAIRealtime(
             api_key=config.require_api_key(),
@@ -42,12 +45,13 @@ async def run_call(twilio_ws: WebSocket) -> None:
                 asyncio.create_task(_pump(openai.events(), queue, E.OpenAIClosed())),
             ]
             try:
-                await _drive(session, queue, twilio, openai)
+                await _drive(session, queue, twilio, openai, monitor)
             finally:
                 for task in producers:
                     task.cancel()
                 await asyncio.gather(*producers, return_exceptions=True)
     finally:
+        monitor.log_summary()
         await twilio.aclose()
 
 
@@ -69,10 +73,14 @@ async def _drive(
     queue: asyncio.Queue,
     twilio: TwilioMediaStream,
     openai: OpenAIRealtime,
+    observer: CallLatency | None = None,
 ) -> None:
     while True:
         event = await queue.get()
-        for command in session.handle(event):
+        commands = session.handle(event)
+        if observer is not None:
+            observer.observe(event, commands)
+        for command in commands:
             await _dispatch(command, twilio, openai)
         if session.state is CallState.CLOSING:
             return
