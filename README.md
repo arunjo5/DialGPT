@@ -1,4 +1,4 @@
-# Twilio + OpenAI Realtime Voice Assistant
+# DialGPT
 
 Connects a Twilio phone number to the OpenAI Realtime API so callers can talk to a GPT voice model. Handles interruptions (barge-in), replies in the caller's language, and can answer from a PDF you provide.
 
