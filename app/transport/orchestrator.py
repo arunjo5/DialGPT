@@ -46,7 +46,7 @@ SEARCH_DOCUMENT_TOOL = {
 }
 
 
-async def run_call(twilio_ws: WebSocket) -> None:
+async def run_call(twilio_ws: WebSocket, *, openai_connect=None) -> None:
     await twilio_ws.accept()
     twilio = TwilioMediaStream(twilio_ws)
     monitor = CallLatency()
@@ -60,6 +60,7 @@ async def run_call(twilio_ws: WebSocket) -> None:
             voice=config.VOICE,
             instructions=config.build_instructions(has_document),
             tools=[SEARCH_DOCUMENT_TOOL] if has_document else None,
+            connect=openai_connect,
         ) as openai:
             await openai.initialize_session()
 

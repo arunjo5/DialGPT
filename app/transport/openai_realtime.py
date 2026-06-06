@@ -27,16 +27,18 @@ class OpenAIRealtime:
         voice: str,
         instructions: str,
         tools: list | None = None,
+        connect=None,
     ) -> None:
         self._api_key = api_key
         self._model = model
         self._voice = voice
         self._instructions = instructions
         self._tools = tools
+        self._connect = connect or websockets.connect
         self._ws = None
 
     async def __aenter__(self) -> "OpenAIRealtime":
-        self._ws = await websockets.connect(
+        self._ws = await self._connect(
             f"wss://api.openai.com/v1/realtime?model={self._model}",
             additional_headers={"Authorization": f"Bearer {self._api_key}"},
         )
